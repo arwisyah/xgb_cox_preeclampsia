@@ -1,0 +1,527 @@
+---
+title: "Xgboost_Survival"
+author: "Arya_Wira_Syahdwinata"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+## 1. Muat library dan baca data
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl)
+library(survival)
+library(survminer)
+library(xgboost)
+library(caret)
+library(survivalROC)
+library(dplyr)
+library(riskRegression)
+library(purrr)
+library(ggplot2)
+set.seed(123)
+
+# Baca data
+data <- read_excel("Final.xlsx")
+str(data)
+
+# Ubah semua variabel 0/1 menjadi faktor, kecuali PE
+binary_vars <- sapply(data, function(x) all(x %in% c(0, 1))) & names(data) != "PE"
+data[, binary_vars] <- lapply(data[, binary_vars], factor, levels = c(0, 1))
+
+# Memeriksa hasil perubahan tipe data
+str(data)
+```
+
+## 2. Simulasi penambahan data tersensor secara berkala dengan 100x run per model
+```{r}
+set.seed(123)
+
+# Jumlah data PE tetap
+n_PE <- sum(data$PE == 1)
+
+# Daftar presentase penyensoran non-PE
+presentase_list <- seq(0, 90, by = 5)
+
+# Simpan hasil untuk tiap loop
+results <- list()
+
+for (loop_index in seq_along(presentase_list)) {
+  p <- presentase_list[loop_index]
+  
+  total <- ceiling((100 / (100 - p)) * n_PE)
+  n_non_PE <- total - n_PE
+  
+  loop_cindices_xgb <- c()
+  loop_cindices_cox <- c()
+  logliks_xgb <- c()
+  logliks_cox <- c()
+  
+  for (i in 1:100) {
+    sampled_non_PE <- data %>%
+      filter(PE == 0) %>%
+      sample_n(n_non_PE)
+    
+    loop_data_combined <- bind_rows(
+      data %>% filter(PE == 1),
+      sampled_non_PE
+    )
+    
+    # Cox PH model
+    cox_model_loop <- coxph(Surv(Weeks_GA_Delivery, PE) ~ ., data = loop_data_combined)
+    cox_risk_score_loop <- predict(cox_model_loop)
+    cindex_cox <- concordance(
+      coxph(Surv(loop_data_combined$Weeks_GA_Delivery, loop_data_combined$PE) ~ cox_risk_score_loop)
+    )$concordance
+    loop_cindices_cox <- c(loop_cindices_cox, cindex_cox)
+    
+    # Simpan log-likelihood Cox
+    loglik_cox <- as.numeric(logLik(cox_model_loop))
+    logliks_cox <- c(logliks_cox, loglik_cox)
+    
+    # XGBoost-Cox model
+    x_all_loop <- model.matrix(~ . -1, data = loop_data_combined %>% select(-Weeks_GA_Delivery, -PE))
+    y_all_loop <- loop_data_combined %>%
+      mutate(label = ifelse(PE == 1, Weeks_GA_Delivery, -Weeks_GA_Delivery)) %>%
+      pull(label)
+    
+    dtrain_loop <- xgb.DMatrix(data = x_all_loop, label = y_all_loop)
+    
+    params <- list(
+      objective = "survival:cox",
+      max_depth = 3,            # Lebih rendah dari 7, cegah overfitting
+      eta = 0.03,               # Lambat tapi tidak separah 0.01
+      min_child_weight = 5,     # Cegah split jika datanya sedikit
+      gamma = 1.5,              # Hambat split kecuali gain cukup besar
+      lambda = 2,               # L2 regularization sedang
+      alpha = 1,                # L1 lebih ketat, buat model lebih sparse
+      subsample = 0.8,
+      colsample_bytree = 0.7
+    )
+
+    
+    model_xgb_loop <- xgb.train(
+      params = params,
+      data = dtrain_loop,
+      nrounds = 500,
+      verbose = 0,
+      early_stopping_rounds = 100,
+      watchlist = list(train = dtrain_loop),
+      eval_metric = "cox-nloglik"
+    )
+    
+    pred_xgb_loop <- predict(model_xgb_loop, dtrain_loop)
+    
+    # Hitung C-index dari prediksi XGBoost
+    cindex_xgb <- concordance(
+      coxph(Surv(loop_data_combined$Weeks_GA_Delivery, loop_data_combined$PE) ~ pred_xgb_loop)
+    )$concordance
+    loop_cindices_xgb <- c(loop_cindices_xgb, cindex_xgb)
+    
+    # Hitung log-likelihood XGBoost prediksi
+    surv_obj <- Surv(loop_data_combined$Weeks_GA_Delivery, loop_data_combined$PE)
+    loglik_xgb <- coxph(surv_obj ~ pred_xgb_loop)$loglik[2]
+    logliks_xgb <- c(logliks_xgb, loglik_xgb)
+  }
+  
+  results[[loop_index]] <- list(
+    loop = loop_index,
+    persentase = p,
+    mean_cindex_xgb = mean(loop_cindices_xgb),
+    mean_cindex_cox = mean(loop_cindices_cox),
+    mean_loglik_xgb = mean(logliks_xgb),
+    mean_loglik_cox = mean(logliks_cox),
+    cindices_xgb = loop_cindices_xgb,
+    cindices_cox = loop_cindices_cox,
+    logliks_xgb = logliks_xgb,
+    logliks_cox = logliks_cox
+  )
+}
+
+results
+```
+## 3. Boxplot C index dari simulasi
+```{r}
+# Ambil semua nilai C-index dari results
+boxplot_data <- do.call(rbind, lapply(seq_along(results), function(i) {
+  data.frame(
+    PercentSensor = results[[i]]$persentase,
+    XGBoost_Cindex = results[[i]]$cindices_xgb,
+    CoxPH_Cindex = results[[i]]$cindices_cox
+  )
+}))
+
+# Ubah ke long format
+plot_data_long <- boxplot_data %>%
+  pivot_longer(
+    cols = c(XGBoost_Cindex, CoxPH_Cindex),
+    names_to = "Model",
+    values_to = "Cindex"
+  )
+
+# Ganti nama model agar rapi di legend
+plot_data_long$Model <- factor(plot_data_long$Model,
+                               levels = c("XGBoost_Cindex", "CoxPH_Cindex"),
+                               labels = c("XGB-Cox", "Cox PH"))
+
+# Tentukan batas maksimum sumbu y berdasarkan data
+max_cindex <- max(plot_data_long$Cindex, na.rm = TRUE)
+
+# Plot boxplot
+ggplot(plot_data_long, aes(x = factor(PercentSensor), y = Cindex, fill = Model)) +
+  geom_boxplot(outlier.size = 0.8, width = 0.6, position = position_dodge(width = 0.8)) +
+  labs(
+    title = "C-index Distribution of 100 Times Model Run",
+    x = "Percent Censored Data",
+    y = "C-index",
+    fill = "Model"
+  ) +
+  scale_fill_manual(values = c("XGB-Cox" = "#1f77b4", "Cox PH" = "#ff7f0e")) + ylim(0.6, max_cindex) + theme_minimal(base_size = 14)
+
+# Ambil semua nilai Log-Likelihood dari results
+loglik_box_data <- do.call(rbind, lapply(seq_along(results), function(i) {
+  data.frame(
+    PercentSensor = results[[i]]$persentase,
+    XGBoost_LogLik = results[[i]]$logliks_xgb,
+    CoxPH_LogLik = results[[i]]$logliks_cox
+  )
+}))
+
+# Ubah ke long format
+loglik_plot_long <- loglik_box_data %>%
+  pivot_longer(
+    cols = c(XGBoost_LogLik, CoxPH_LogLik),
+    names_to = "Model",
+    values_to = "LogLikelihood"
+  )
+
+# Ganti nama model agar rapi di legend
+loglik_plot_long$Model <- factor(loglik_plot_long$Model,
+                                 levels = c("XGBoost_LogLik", "CoxPH_LogLik"),
+                                 labels = c("XGB-Cox", "Cox PH"))
+
+# Plot boxplot
+ggplot(loglik_plot_long, aes(x = factor(PercentSensor), y = LogLikelihood, fill = Model)) +
+  geom_boxplot(outlier.size = 0.8, width = 0.6, position = position_dodge(width = 0.8)) +
+  labs(
+    title = "Log-Likelihood Distribution of 100 Times Model Run",
+    x = "Percent Censored Data",
+    y = "Log-Likelihood",
+    fill = "Model"
+  ) +
+  scale_fill_manual(values = c("XGB-Cox" = "#1f77b4", "Cox PH" = "#ff7f0e")) +
+  theme_minimal(base_size = 14)
+```
+Dipilih 55% penyensoran karena rata-rata log-likelihood pada kedua model memiliki selisih terkecil
+
+## 4. Cox Proportional Hazards Model
+
+```{r}
+set.seed(123)
+
+# Menentukan jumlah observasi berdasarkan penyensoran 55%
+n_PE <- sum(data$PE == 1)  # 71 PE
+n_non_PE <- 87  # Non-PE yang sesuai dengan 55% penyensoran
+
+# Sampling data secara acak dengan proporsi sesuai
+sampled_non_PE <- data %>%
+  filter(PE == 0) %>%
+  sample_n(n_non_PE)
+
+sampled_data <- bind_rows(
+  data %>% filter(PE == 1),  # Mengambil semua PE (71)
+  sampled_non_PE  # Mengambil sampel non-PE (87)
+)
+
+# Membuat model Cox PH
+cox_model <- coxph(Surv(Weeks_GA_Delivery, PE) ~ ., data = sampled_data)
+summary(cox_model)
+
+# Menghitung C-index
+cox_risk_score <- predict(cox_model)
+cox_cindex <- concordance(
+  coxph(Surv(sampled_data$Weeks_GA_Delivery, sampled_data$PE) ~ cox_risk_score, data = sampled_data)
+)$concordance
+
+cox_cindex
+```
+
+## 5. Siapkan Matrix dan Label untuk XGBoost
+
+```{r}
+x_all <- model.matrix(~ . -1, data = sampled_data %>% select(-Weeks_GA_Delivery, -PE))
+y_all <- sampled_data %>% mutate(label = ifelse(PE == 1, Weeks_GA_Delivery, -Weeks_GA_Delivery)) %>% pull(label)
+```
+
+## 6. Membuat Random Search Function dengan cross validation
+
+```{r}
+random_search_cv <- function(n_iter, param_grid, x_all, y_all, sampled_data, k_folds =10) {
+  n <- nrow(x_all)
+  fold_ids <- sample(rep(1:k_folds, length.out = n))
+  best_model <- NULL
+
+  for (i in 1:n_iter) {
+    params <- param_grid[i, ]
+    cindices <- c()
+
+    for (k in 1:k_folds) {
+      val_idx <- which(fold_ids == k)
+      train_idx <- setdiff(1:n, val_idx)
+
+      dtrain_cv <- xgb.DMatrix(data = x_all[train_idx, ], label = y_all[train_idx])
+      dval_cv   <- xgb.DMatrix(data = x_all[val_idx, ], label = y_all[val_idx])
+
+      model_cv <- xgb.train(
+        params = list(
+          objective = "survival:cox",
+          eta = params$eta,
+          max_depth = as.integer(params$max_depth),
+          gamma = params$gamma,
+          colsample_bytree = params$colsample_bytree,
+          min_child_weight = as.integer(params$min_child_weight),
+          subsample = params$subsample,
+          lambda = params$lambda,
+          alpha = params$alpha
+        ),
+        data = dtrain_cv,
+        nrounds = 1000,
+        verbose = 0
+      )
+
+      pred <- predict(model_cv, dval_cv)
+      cind <- concordance(coxph(Surv(sampled_data$Weeks_GA_Delivery[val_idx], sampled_data$PE[val_idx]) ~ pred))$concordance
+      cindices <- c(cindices, cind)
+    }
+
+    mean_cindex <- mean(cindices)
+
+    if (is.null(best_model) || mean_cindex > best_model$cindex) {
+      best_model <- list(
+        params = params,
+        cindex = mean_cindex
+      )
+    }
+  }
+
+  return(best_model)
+}
+```
+
+## 7. Loop untuk Random Search
+
+```{r}
+n_iter <- 1000
+
+param_grid <- tibble(
+  eta = runif(n_iter, 0.01, 0.3),
+  max_depth = sample(3:10, n_iter, replace = TRUE),
+  gamma = runif(n_iter, 0, 5),
+  colsample_bytree = runif(n_iter, 0.5, 1),
+  min_child_weight = sample(1:10, n_iter, replace = TRUE),
+  subsample = runif(n_iter, 0.5, 1),
+  lambda = runif(n_iter, 0, 5),
+  alpha = runif(n_iter, 0, 3)
+)
+
+best_model <- random_search_cv(n_iter, param_grid, x_all, y_all, sampled_data)
+best_params <- best_model$params
+best_cindex <- best_model$cindex
+best_params
+best_cindex
+```
+
+## 8. Bangun Model Terakhir Menggunakan Seluruh Data
+
+```{r}
+dtrain <- xgb.DMatrix(data = x_all, label = y_all)
+
+final_model <- xgb.train(
+  params = list(
+    objective = "survival:cox",
+    eta = best_params$eta,
+    max_depth = as.integer(best_params$max_depth),
+    gamma = best_params$gamma,
+    colsample_bytree = best_params$colsample_bytree,
+    min_child_weight = as.integer(best_params$min_child_weight),
+    subsample = best_params$subsample,
+    lambda = best_params$lambda,
+    alpha = best_params$alpha
+  ),
+  data = dtrain,
+  nrounds = 1000,
+  verbose = 0
+)
+
+final_pred <- predict(final_model, dtrain)
+final_cindex <- concordance(coxph(Surv(Weeks_GA_Delivery, PE) ~ final_pred, data = sampled_data))$concordance
+final_cindex
+```
+
+## 9. Cox vs XGB-cox
+
+```{r}
+eval_table <- tibble(
+  Model = c("Cox PH", "XGB-Cox"),
+  C_index = c(cox_cindex, final_cindex)
+)
+eval_table
+```
+
+## 10. Membandingkan Brier Score dari beberapa titik waktu kejadian PE
+
+```{r}
+# Fungsi Brier Score
+compute_brier <- function(time_point, surv_probs, event_time, event_status, km_censor) {
+  n <- length(event_time)
+  weights <- rep(NA, n)
+
+  G_hat <- summary(km_censor, times = time_point, extend = TRUE)$surv
+  G_i <- summary(km_censor, times = pmin(event_time, time_point), extend = TRUE)$surv
+
+  for (i in 1:n) {
+    if (event_time[i] > time_point) {
+      weights[i] <- 1 / G_hat
+    } else if (event_status[i] == 1 & event_time[i] <= time_point) {
+      weights[i] <- 1 / G_i[i]
+    } else {
+      weights[i] <- 0
+    }
+  }
+
+  y_i <- as.numeric(event_time <= time_point & event_status == 1)
+  mean(weights * (surv_probs - y_i)^2, na.rm = TRUE)
+}
+
+# Survival time & status
+event_time <- sampled_data$Weeks_GA_Delivery
+event_status <- sampled_data$PE
+
+# Kaplan-Meier untuk censoring
+km_censor <- survfit(Surv(event_time, 1 - event_status) ~ 1)
+
+# Tentukan time points
+time_points <- quantile(event_time[event_status == 1], probs = seq(0.1, 0.9, 0.1), na.rm = TRUE)
+
+# ======= Cox PH Predictions =======
+cox_survfit <- survfit(cox_model, newdata = sampled_data)
+cox_surv_probs <- sapply(time_points, function(t) {
+  summary(cox_survfit, times = t)$surv
+})
+
+# ======= XGB-Cox Survival Probs =======
+cox_xgb <- coxph(Surv(event_time, event_status) ~ final_pred, data = sampled_data)
+baseline_hazard <- basehaz(cox_xgb, centered = FALSE)
+
+get_surv_prob_xgb <- function(pred, time_point, basehaz_df) {
+  lambda_0_t <- approx(basehaz_df$time, basehaz_df$hazard, xout = time_point, rule = 2)$y
+  exp(-lambda_0_t * exp(pred))
+}
+
+xgb_surv_probs <- sapply(time_points, function(t) {
+  sapply(final_pred, function(lp) get_surv_prob_xgb(lp, t, baseline_hazard))
+})
+
+# ======= Hitung Brier Score =======
+cox_brier_scores <- numeric(length(time_points))
+xgb_brier_scores <- numeric(length(time_points))
+
+for (i in seq_along(time_points)) {
+  cox_brier_scores[i] <- compute_brier(
+    time_point = time_points[i],
+    surv_probs = cox_surv_probs[, i],
+    event_time = event_time,
+    event_status = event_status,
+    km_censor = km_censor
+  )
+
+  xgb_brier_scores[i] <- compute_brier(
+    time_point = time_points[i],
+    surv_probs = xgb_surv_probs[, i],
+    event_time = event_time,
+    event_status = event_status,
+    km_censor = km_censor
+  )
+}
+
+# ======= Tabel Hasil =======
+brier_result <- tibble(
+  Time = round(time_points, 2),
+  Brier_CoxPH = round(cox_brier_scores, 4),
+  Brier_XGBCox = round(xgb_brier_scores, 4)
+)
+
+brier_result
+```
+
+## 11. Plot Kaplan-Meier
+
+```{r}
+# Buat kuartil berdasarkan prediksi risiko
+sampled_data$cox_risk_score <- cox_risk_score
+sampled_data$xgb_risk_score <- final_pred
+
+# Buat kelompok kuartil
+sampled_data$cox_quartile <- ntile(sampled_data$cox_risk_score, 4)
+sampled_data$xgb_quartile <- ntile(sampled_data$xgb_risk_score, 4)
+
+# Kaplan-Meier & Log-rank untuk Cox-PH
+fit_km_cox <- survfit(Surv(Weeks_GA_Delivery, PE) ~ cox_quartile, data = sampled_data)
+
+# Log-rank test untuk Cox-PH
+logrank_cox <- survdiff(Surv(Weeks_GA_Delivery, PE) ~ cox_quartile, data = sampled_data)
+
+# Kaplan-Meier & Log-rank untuk XGB-Cox
+fit_km_xgb <- survfit(Surv(Weeks_GA_Delivery, PE) ~ xgb_quartile, data = sampled_data)
+
+# Log-rank test untuk XGB-Cox
+logrank_xgb <- survdiff(Surv(Weeks_GA_Delivery, PE) ~ xgb_quartile, data = sampled_data)
+
+# Plot Kaplan-Meier untuk Cox-PH dan XGB-Cox
+ggsurvplot(fit_km_cox, data = sampled_data, pval = TRUE, title = "Kaplan-Meier by Cox Risk Quartile", palette = "Dark2")
+ggsurvplot(fit_km_xgb, data = sampled_data, pval = TRUE, title = "Kaplan-Meier by XGB Risk Quartile", palette = "Dark2")
+
+# Menampilkan p-value log-rank untuk kedua model dari hasil survdiff
+print(paste("Log-rank p-value for Cox-PH:", round(logrank_cox$pvalue, 4)))
+print(paste("Log-rank p-value for XGB-Cox:", round(logrank_xgb$pvalue, 4)))
+```
+
+## 12. Plot Pengaruh Kovariat Terhadap Hasil Prediksi dari Setiap Model.
+
+```{r}
+# Data dari model Cox
+cox_summary <- summary(cox_model)$coefficients
+
+cox_df <- tibble(
+  Feature = rownames(cox_summary),
+  Coef = cox_summary[, "coef"],
+  P_value = cox_summary[, "Pr(>|z|)"]
+)
+cox_df <- cox_df[!is.na(cox_df$Coef), ]
+
+# Barplot dengan arah pengaruh
+ggplot(cox_df, aes(x = reorder(Feature, Coef), y = Coef, fill = Coef > 0)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("red", "steelblue"), labels = c("Negative", "Positive")) +
+  labs(title = "Cox-PH Coefficient across Features",
+       x = "Features",
+       y = "Coefficient",
+       fill = "Direction") +
+  theme_minimal(base_size = 14)
+
+# Importance dari model XGBoost
+xgb_importance <- xgb.importance(model = final_model)
+
+xgb_df <- xgb_importance %>%
+  select(Feature, Gain)
+
+ggplot(xgb_df, aes(x = reorder(Feature, Gain), y = Gain)) +
+  geom_col(fill = "darkgreen") +
+  coord_flip() +
+  labs(title = "Feature Importance (XGB-Cox)",
+       x = "Features",
+       y = "Gain") +
+  theme_minimal(base_size = 14)
+```
