@@ -1,4 +1,4 @@
-# XGBoost-Cox Survival Analysis for Preeclampsia
+# Early Preeclampsia Detection Using XGBoost-Cox Proportional Hazard Model
 
 This repository contains the R Markdown source code and project configuration files for preeclampsia survival modeling using the **XGBoost-Cox** algorithm.
 
