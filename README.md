@@ -9,7 +9,6 @@ If you use or reference this codebase, please cite the original article:
 > Syahdwinata, A. W., & Abdullah, S. (2026). Early Preeclampsia Detection Using XGBoost-Cox Proportional Hazard Model. *Indonesian Journal of Statistics and Its Applications*, 9(1), 33–45. https://doi.org/10.29244/ijsa.v9i1p33-45 (Original work published June 24, 2025)
 
 * **Journal Article**: [IJSA IPB - Article 1289](https://journal-stats.ipb.ac.id/index.php/ijsa/article/view/1289)
-* **DOI**: [10.29244/ijsa.v9i1p33-45](https://doi.org/10.29244/ijsa.v9i1p33-45)
 
 ---
 
