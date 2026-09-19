@@ -65,9 +65,22 @@ To allow code reproducibility, a **synthetic dummy dataset (`dummy_data.csv`)** 
 ## 💡 Key Findings & Analytical Insights
 
 ### 1. Model Discrimination & Risk Stratification
-* **Superior Predictive Accuracy**: The **XGBoost-Cox** model achieved a significantly higher $C\text{-index}$ of **0.8907** compared to **0.7547** from the baseline Cox-PH model, demonstrating superior capability in ranking patient preeclampsia risk.
-* **Enhanced Risk Stratification**: Kaplan-Meier survival curves revealed that XGB-Cox cleanly separated patients into distinct risk quartiles, whereas the standard Cox-PH model suffered from overlapping moderate-risk groups.
-* **Calibration Dynamics over Gestational Time**: Time-dependent **Brier Scores** showed that XGB-Cox consistently provided better-calibrated risk probabilities throughout early-to-mid pregnancy, though accuracy converged with Cox-PH towards late-stage gestation.
+Kaplan-Meier survival curves revealed that the **XGBoost-Cox** model cleanly separated patients into distinct risk quartiles, whereas the standard Cox-PH model struggled with overlapping moderate-risk groups. This clearer risk discrimination is reinforced by a significantly higher $C\text{-index}$ of **0.8907** for XGBoost-Cox compared to **0.7547** for Cox-PH, demonstrating superior capability in ranking patient preeclampsia risk.
+
+<table border="0">
+  <tr>
+    <td width="50%" align="center">
+      <img src="assets/KM_Cox.png" alt="Kaplan-Meier Curve Cox-PH" width="100%">
+      <br>
+      <sub><b>Figure 1a:</b> Cox-PH Kaplan-Meier Risk Stratification</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="assets/KM_XGB.png" alt="Kaplan-Meier Curve XGBoost-Cox" width="100%">
+      <br>
+      <sub><b>Figure 1b:</b> XGBoost-Cox Kaplan-Meier Risk Stratification</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
