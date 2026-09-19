@@ -62,6 +62,29 @@ To allow code reproducibility, a **synthetic dummy dataset (`dummy_data.csv`)** 
 | 22 | `PLGFconcentration pgml` | Numerical | Maternal PLGF concentration | pg/mL |
 
 ---
+## 💡 Key Findings & Analytical Insights
+
+### 1. Model Discrimination & Risk Stratification
+* **Superior Predictive Accuracy**: The **XGBoost-Cox** model achieved a significantly higher $C\text{-index}$ of **0.8907** compared to **0.7547** from the baseline Cox-PH model, demonstrating superior capability in ranking patient preeclampsia risk.
+* **Enhanced Risk Stratification**: Kaplan-Meier survival curves revealed that XGB-Cox cleanly separated patients into distinct risk quartiles, whereas the standard Cox-PH model suffered from overlapping moderate-risk groups.
+* **Calibration Dynamics over Gestational Time**: Time-dependent **Brier Scores** showed that XGB-Cox consistently provided better-calibrated risk probabilities throughout early-to-mid pregnancy, though accuracy converged with Cox-PH towards late-stage gestation.
+
+---
+
+### 2. Feature Importance & Clinical Interpretability (Gain Metric)
+While Cox-PH provides direct Hazard Ratios, XGBoost-Cox balances high predictive accuracy with model interpretability via **Gain-based Feature Importance** (quantifying each feature's contribution to split quality across decision trees):
+
+* **Top Clinical Drivers**: `FinalMAP` (Mean Arterial Pressure), `FinalOpthalmica` (Ophthalmic Artery Doppler), and `FinalMeanUtAPI` (Uterine Artery Pulsatility Index) emerged as the primary predictors for early detection.
+* **Secondary Biomarkers & Metrics**: `PLGFconcentration pgml` (Placental Growth Factor) and `CRL mm` (Crown-Rump Length) contributed significantly to overall model split accuracy.
+* **Lower Relative Contribution**: Anamnesis history such as `PreviousPE` demonstrated lower relative importance when continuous clinical and Doppler measurements were present.
+
+> 📊 **Data Science Takeaway**: Tree-based gradient boosting effectively captures non-linear interactions among maternal risk factors that standard linear Cox models miss, without sacrificing clinical interpretability.
+
+---
+
+### 3. Data Sensitivity Analysis (Censoring Rate)
+* **Robustness & Stability**: Evaluation of censorship impact revealed that a censoring proportion exceeding **>55%** negatively impacts model stability, with XGB-Cox exhibiting higher sensitivity to right-censored data than traditional Cox-PH.
+* **Engineering Implication**: Highlights the critical need for balanced survival data selection and careful handling of censored patient timelines in real-world clinical deployments.
 
 ## 🚀 How to Run
 
@@ -69,3 +92,5 @@ To allow code reproducibility, a **synthetic dummy dataset (`dummy_data.csv`)** 
 2. Open `XGBoost_Survival.Rproj` in RStudio.
 3. Run `renv::restore()` in the R console to install the exact package versions.
 4. Replace the input file name in `XGB-Cox.Rmd` with `dummy_data.csv` (or your own dataset following the codebook structure) and knit/run the chunk.
+
+
