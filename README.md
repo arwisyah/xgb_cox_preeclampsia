@@ -4,11 +4,17 @@ This repository contains the R Markdown source code and project configuration fi
 
 ## 📖 How to Cite
 
-If you use or reference this codebase, please cite the original article:
+This codebase supports both the peer-reviewed journal publication and the underlying Master's thesis research. If you use or reference this repository, please cite:
 
-> Syahdwinata, A. W., & Abdullah, S. (2026). Early Preeclampsia Detection Using XGBoost-Cox Proportional Hazard Model. *Indonesian Journal of Statistics and Its Applications*, 9(1), 33–45. https://doi.org/10.29244/ijsa.v9i1p33-45 (Original work published June 24, 2025)
+### 1. Peer-Reviewed Journal Article (Primary Reference)
+> Syahdwinata, A. W., & Abdullah, S. (2026). Early Preeclampsia Detection Using XGBoost-Cox Proportional Hazard Model. *Indonesian Journal of Statistics and Its Applications*, 9(1), 33–45. https://doi.org/10.29244/ijsa.v9i1p33-45
 
-* **Journal Article**: [IJSA IPB - Article 1289](https://journal-stats.ipb.ac.id/index.php/ijsa/article/view/1289)
+* **Journal Link**: [IJSA IPB - Article 1289](https://journal-stats.ipb.ac.id/index.php/ijsa/article/view/1289)
+
+### 2. Master's Thesis (Extended Methodology & Analytical Framework)
+> Syahdwinata, A. W. (2025). *Deteksi Dini Preeklamsia Menggunakan XGBoost-Cox Proportional Hazard Model* [Tesis magister, Universitas Indonesia]. Perpustakaan Universitas Indonesia. https://lib.ui.ac.id/detail?id=9999920583461&lokasi=lokal#parentHorizontalTab1
+
+* **Thesis Repository**: [UI Library Catalog](https://lib.ui.ac.id/detail?id=9999920583461&lokasi=lokal#parentHorizontalTab1) *(Note: Full text access is restricted to UI Library members)*
 
 ---
 
