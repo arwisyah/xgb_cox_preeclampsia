@@ -91,6 +91,12 @@ While Cox-PH provides direct Hazard Ratios, XGBoost-Cox balances high predictive
 * **Secondary Biomarkers & Metrics**: `PLGFconcentration pgml` (Placental Growth Factor) and `CRL mm` (Crown-Rump Length) contributed significantly to overall model split accuracy.
 * **Lower Relative Contribution**: Anamnesis history such as `PreviousPE` demonstrated lower relative importance when continuous clinical and Doppler measurements were present.
 
+<p align="center">
+  <img src="assets/FeatureImportance.png" alt="XGBoost-Cox Feature Importance" width="80%">
+  <br>
+  <sub><b>Figure 2:</b> Feature importance measured by Gain across XGBoost-Cox decision tree splits.</sub>
+</p>
+
 ## 🚀 How to Run
 
 1. Clone this repository or download it as a ZIP.
