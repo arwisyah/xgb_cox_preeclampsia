@@ -78,14 +78,6 @@ While Cox-PH provides direct Hazard Ratios, XGBoost-Cox balances high predictive
 * **Secondary Biomarkers & Metrics**: `PLGFconcentration pgml` (Placental Growth Factor) and `CRL mm` (Crown-Rump Length) contributed significantly to overall model split accuracy.
 * **Lower Relative Contribution**: Anamnesis history such as `PreviousPE` demonstrated lower relative importance when continuous clinical and Doppler measurements were present.
 
-> 📊 **Data Science Takeaway**: Tree-based gradient boosting effectively captures non-linear interactions among maternal risk factors that standard linear Cox models miss, without sacrificing clinical interpretability.
-
----
-
-### 3. Data Sensitivity Analysis (Censoring Rate)
-* **Robustness & Stability**: Evaluation of censorship impact revealed that a censoring proportion exceeding **>55%** negatively impacts model stability, with XGB-Cox exhibiting higher sensitivity to right-censored data than traditional Cox-PH.
-* **Engineering Implication**: Highlights the critical need for balanced survival data selection and careful handling of censored patient timelines in real-world clinical deployments.
-
 ## 🚀 How to Run
 
 1. Clone this repository or download it as a ZIP.
